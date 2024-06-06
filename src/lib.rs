@@ -1,6 +1,12 @@
+use std::{
+    collections::HashMap,
+    fs::File,
+    io::{BufRead, BufReader},
+};
+
+use glob::glob;
 use lazy_static::lazy_static;
 use regex::Regex;
-use std::collections::HashMap;
 
 const MAX_RECURSION: i32 = 1024;
 
@@ -22,10 +28,31 @@ const GROK_PATTERN: &str = r"(?x)
     )
 \}";
 
-lazy_static! {
-    static ref GROK_REGEX: Regex = Regex::new(GROK_PATTERN).unwrap();
+fn load_patterns() -> HashMap<String, String> {
+    let mut patterns = HashMap::new();
+
+    for line in glob("src/patterns/*")
+        .unwrap()
+        .map(|e| e.unwrap())
+        .map(|path| File::open(path).unwrap())
+        .flat_map(|f| BufReader::new(f).lines())
+        .map(|line| line.unwrap())
+        .filter(|line| !line.starts_with('#'))
+        .filter(|line| !line.is_empty())
+    {
+        let (key, value) = line.split_at(line.find(' ').unwrap());
+        patterns.insert(key.to_string(), value.trim().to_string());
+    }
+
+    patterns
 }
 
+lazy_static! {
+    static ref GROK_REGEX: Regex = Regex::new(GROK_PATTERN).unwrap();
+    static ref DEFAULT_PATTERNS: HashMap<String, String> = load_patterns();
+}
+
+#[derive(Debug)]
 pub enum Value {
     Int(i64),
     Float(f64),
@@ -130,28 +157,5 @@ impl Grok {
 mod tests {
     use regex::Regex;
 
-    use crate::{Grok, GROK_PATTERN};
-
-    #[test]
-    fn test_pattern_regex() {
-        let r = Regex::new(GROK_PATTERN).unwrap();
-        r.captures_iter("%{WORD:word:float}").for_each(|caps| {
-            println!("{:?}", caps.name("name"));
-            println!("{:?}", caps.name("pattern"));
-            println!("{:?}", caps.name("alias"));
-            println!("{:?}", caps.name("type"));
-        });
-    }
-
-    #[test]
-    fn test_compile() {
-        let mut grok = Grok::default();
-        grok.add_pattern("WORD", r"\w+");
-        grok.add_pattern("NUMBER", r"\d+");
-
-        let pattern = grok
-            .compile("%{WORD:word} %{NUMBER:number:int}", false)
-            .unwrap();
-        println!("{:?}", pattern);
-    }
+    use crate::{load_patterns, Grok, GROK_PATTERN};
 }
