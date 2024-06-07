@@ -202,13 +202,13 @@ mod tests {
         named_capture_only: bool,
     }
 
-    fn assert<'a>(c: Case<'a>) {
-        let grok = Grok::from_iter(c.patterns.into_iter());
+    fn assert(c: Case<'_>) {
+        let grok = Grok::from_iter(c.patterns);
         let pattern = grok.compile(c.pattern, c.named_capture_only).unwrap();
         assert_eq!(c.expected, pattern.parse(c.input).unwrap());
     }
 
-    fn asserts<'a>(cases: Vec<Case<'a>>) {
+    fn asserts(cases: Vec<Case<'_>>) {
         for c in cases {
             assert(c);
         }
@@ -252,7 +252,7 @@ mod tests {
             .collect::<HashMap<String, Value>>();
 
         {
-            let grok = Grok::from_iter([("NAME", r"[A-z0-9._-]+")].into_iter());
+            let grok = Grok::from_iter([("NAME", r"[A-z0-9._-]+")]);
             let pattern = grok.compile("%{NAME}", false).unwrap();
             assert_eq!(expected, pattern.parse("admin").unwrap());
         }
@@ -411,7 +411,7 @@ mod tests {
             false,
         )
         ].into_iter().map(|(patterns, pattern, input, expected, named_capture_only)| Case {
-            patterns: patterns.into_iter().map(|(k, v)| (k, v)).collect(),
+            patterns: patterns.into_iter().collect(),
             pattern,
             input,
             expected: expected.into_iter().map(|(k, v)| (k.to_string(), v)).collect(),
@@ -457,7 +457,7 @@ mod tests {
         .into_iter()
         .map(
             |(patterns, pattern, input, expected, named_capture_only)| Case {
-                patterns: patterns.into_iter().map(|(k, v)| (k, v)).collect(),
+                patterns: patterns.into_iter().collect(),
                 pattern,
                 input,
                 expected: expected
@@ -510,7 +510,7 @@ mod tests {
         .into_iter()
         .map(
             |(patterns, pattern, input, expected, named_capture_only)| Case {
-                patterns: patterns.into_iter().map(|(k, v)| (k, v)).collect(),
+                patterns: patterns.into_iter().collect(),
                 pattern,
                 input,
                 expected: expected
@@ -796,14 +796,5 @@ mod tests {
                 );
             }
         }
-    }
-
-    #[test]
-    fn test_re() {
-        let s = r"(?:0[1-9]|1[0-2])";
-        // let s = r"(?:1[0-2])";
-        let r = Regex::new(s).unwrap();
-        let result = r.find("12").unwrap();
-        println!("{:?}", result);
     }
 }
