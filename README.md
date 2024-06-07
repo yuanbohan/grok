@@ -1,3 +1,7 @@
+[![Build Status](https://github.com/yuanbohan/grok-rs/actions/workflows/ci.yml/badge.svg)](https://github.com/yuanbohan/grok-rs/blob/main/.github/workflows/ci.yml)
+[![Version](https://img.shields.io/crates/v/grok-rs?label=grok-rs)](https://crates.io/crates/grok-rs)
+[![codecov](https://codecov.io/gh/yuanbohan/grok-rs/graph/badge.svg?token=1T8WSFV6BX)](https://codecov.io/gh/yuanbohan/grok-rs)
+
 # grok
 
 Rust port of Elastic Grok processor, inspired by [grok-go][grok-go] and [grok][grok]
