@@ -22,7 +22,7 @@ const GROK_PATTERN: &str = r"(?x)
         (?:
             :(?<alias>[[[:word:]]@.-]+)
             (?:
-                :(?<type>int|float)
+                :(?<type>int|float|bool(?:ean)?)
             )?
         )?
     )
@@ -42,6 +42,8 @@ fn load_patterns() -> HashMap<String, String> {
         patterns.insert(key.to_string(), value.trim().to_string());
     }
 
+    patterns.insert("BOOL".into(), "true|false".into());
+
     patterns
 }
 
@@ -54,6 +56,7 @@ lazy_static! {
 pub enum Value {
     Int(i64),
     Float(f64),
+    Bool(bool),
     String(String),
 }
 
@@ -90,6 +93,9 @@ impl Pattern {
                                 "float" => Value::Float(
                                     value.parse::<f64>().map_err(|e| format!("{e}: {value}"))?,
                                 ),
+                                "bool" | "boolean" => Value::Bool(
+                                    value.parse::<bool>().map_err(|e| format!("{e}: {value}"))?,
+                                ),
                                 _ => Value::String(value),
                             },
                             None => Value::String(value),
@@ -103,20 +109,6 @@ impl Pattern {
             }
         }
 
-        for (name, (alias, type_)) in self.alias.iter() {
-            if let Some(m) = caps.name(name) {
-                let value = m.as_str().to_string();
-                let value = match type_ {
-                    Some(type_) => match type_.as_str() {
-                        "int" => Value::Int(value.parse::<i64>().map_err(|e| e.to_string())?),
-                        "float" => Value::Float(value.parse::<f64>().map_err(|e| e.to_string())?),
-                        _ => Value::String(value),
-                    },
-                    None => Value::String(value),
-                };
-                map.insert(alias.clone(), value);
-            }
-        }
         Ok(map)
     }
 }
@@ -155,8 +147,6 @@ impl Grok {
                 .or(DEFAULT_PATTERNS.get(pattern))
                 .ok_or(format!("pattern: {pattern}  not found"))?;
 
-            println!("{pattern}: {pattern_regex}");
-
             let to_replace = format!("%{{{name}}}");
 
             while haystack.matches(&to_replace).count() > 0 {
@@ -179,9 +169,7 @@ impl Grok {
             }
         }
 
-        println!("haystack: {:?}", haystack);
         let re = Regex::new(haystack.as_str()).map_err(|e| e.to_string())?;
-        println!("re: {:?}", re);
         Ok(Pattern::new(re, alias_map))
     }
 }
@@ -375,7 +363,7 @@ mod tests {
                     r#"(?:%{IP:destination.ip}|%{NGINX_NOTSEPARATOR:destination.domain})(:%{NUMBER:destination.port})?"#,
                 ),
                 ("IP", r#"(?:\[%{IPV6}\]|%{IPV6}|%{IPV4})"#),
-                ("NGINX_NOTSEPARATOR", r#""[^\t ,:]+""#),
+                ("NGINX_NOTSEPARATOR", r#"[^\t ,:]+"#),
                 ("NUMBER", r#"\d+"#),
                 (
                     "IPV6",
@@ -401,7 +389,7 @@ mod tests {
                     r#"(?:%{IP:destination.ip}|%{NGINX_NOTSEPARATOR:destination.domain})(:%{NUMBER:destination.port})?"#,
                 ),
                 ("IP", r#"(?:\[%{IPV6}\]|%{IPV6}|%{IPV4})"#),
-                ("NGINX_NOTSEPARATOR", r#""[^\t ,:]+""#),
+                ("NGINX_NOTSEPARATOR", r#"[^\t ,:]+"#),
                 ("NUMBER", r#"\d+"#),
                 (
                     "IPV6",
@@ -435,19 +423,37 @@ mod tests {
 
     #[test]
     fn test_default_patterns() {
-        let cases: Vec<Case> = [(
-            vec![
-                ("NGINX_HOST",         r"(?:%{IP:destination.ip}|%{NGINX_NOTSEPARATOR:destination.domain})(:%{NUMBER:destination.port})?"),
-                ("NGINX_NOTSEPARATOR", r#""[^\t ,:]+""#),
-            ],
-            "%{NGINX_HOST}",
-            "127.0.0.1:1234",
-            vec![
-                ("destination.ip", Value::String("127.0.0.1".to_string())),
-                ("destination.port", Value::String("1234".to_string())),
-            ],
-            true,
-        )]
+        let cases: Vec<Case> = [
+            (
+                vec![
+                    ("NGINX_HOST",         r"(?:%{IP:destination.ip}|%{NGINX_NOTSEPARATOR:destination.domain})(:%{NUMBER:destination.port})?"),
+                    ("NGINX_NOTSEPARATOR", r#"[^\t ,:]+"#),
+                ],
+                "%{NGINX_HOST}",
+                "127.0.0.1:1234",
+                vec![
+                    ("destination.ip", Value::String("127.0.0.1".to_string())),
+                    ("destination.port", Value::String("1234".to_string())),
+                ],
+                true,
+            ),
+            (
+                vec![
+                    ("NGINX_HOST",         r"(?:%{IP:destination.ip}|%{NGINX_NOTSEPARATOR:destination.domain})(:%{NUMBER:destination.port})?"),
+                    ("NGINX_NOTSEPARATOR", r#"[^\t ,:]+"#),
+                ],
+                "%{NGINX_HOST}",
+                "127.0.0.1:1234",
+                vec![
+                    ("destination.ip", Value::String("127.0.0.1".to_string())),
+                    ("destination.port", Value::String("1234".to_string())),
+                    ("BASE10NUM", Value::String("1234".to_string())),
+                    ("NGINX_HOST", Value::String("127.0.0.1:1234".to_string())),
+                    ("IPV4", Value::String("127.0.0.1".to_string())),
+                ],
+                false,
+            ),
+        ]
         .into_iter()
         .map(
             |(patterns, pattern, input, expected, named_capture_only)| Case {
@@ -464,5 +470,340 @@ mod tests {
         .collect();
 
         asserts(cases);
+    }
+
+    #[test]
+    fn test_default_patterns_with_type() {
+        let cases: Vec<Case> = [
+            (
+                vec![
+                    ("NGINX_HOST",         r"(?:%{IP:destination.ip}|%{NGINX_NOTSEPARATOR:destination.domain})(:%{NUMBER:destination.port})?"),
+                    ("NGINX_NOTSEPARATOR", r#"[^\t ,:]+"#),
+                ],
+                "%{NGINX_HOST}",
+                "127.0.0.1:1234",
+                vec![
+                    ("destination.ip", Value::String("127.0.0.1".to_string())),
+                    ("destination.port", Value::String("1234".to_string())),
+                    ("BASE10NUM", Value::String("1234".to_string())),
+                    ("NGINX_HOST", Value::String("127.0.0.1:1234".to_string())),
+                    ("IPV4", Value::String("127.0.0.1".to_string())),
+                ],
+                false,
+            ),
+            (
+                vec![
+                    ("NGINX_HOST",         r#"(?:%{IP:destination.ip}|%{NGINX_NOTSEPARATOR:destination.domain})(:%{NUMBER:destination.port:int})?"#),
+                    ("NGINX_NOTSEPARATOR", r#"[^\t ,:]+"#),
+                    ("BOOL", r#"true|false"#),
+                ],
+                "%{NGINX_HOST} %{BOOL:destination.boolean:boolean}",
+                "127.0.0.1:1234 true",
+                vec![
+                    ("destination.ip", Value::String("127.0.0.1".to_string())),
+                    ("destination.port", Value::Int(1234)),
+                    ("destination.boolean", Value::Bool(true)),
+                ],
+                true,
+            ),
+        ]
+        .into_iter()
+        .map(
+            |(patterns, pattern, input, expected, named_capture_only)| Case {
+                patterns: patterns.into_iter().map(|(k, v)| (k, v)).collect(),
+                pattern,
+                input,
+                expected: expected
+                    .into_iter()
+                    .map(|(k, v)| (k.to_string(), v))
+                    .collect(),
+                named_capture_only,
+            },
+        )
+        .collect();
+
+        asserts(cases);
+    }
+
+    #[test]
+    fn test_more_default_patterns() {
+        let cases = [
+            ("WORD", vec!["hello", "world123", "test_data"]),
+            ("NOTSPACE", vec!["example", "text-with-dashes", "12345"]),
+            ("SPACE", vec![" ", "\t", "  "]),
+            // types
+            ("INT", vec!["123", "-456", "+789"]),
+            ("NUMBER", vec!["123", "456.789", "-0.123"]),
+            ("BOOL", vec!["true", "false", "true"]),
+            ("BASE10NUM", vec!["123", "-123.456", "0.789"]),
+            ("BASE16NUM", vec!["1a2b", "0x1A2B", "-0x1a2b3c"]),
+            ("BASE16FLOAT", vec!["0x1.a2b3", "-0x1A2B3C.D", "0x123.abc"]),
+            ("POSINT", vec!["123", "456", "789"]),
+            ("NONNEGINT", vec!["0", "123", "456"]),
+            (
+                "GREEDYDATA",
+                vec!["anything goes", "literally anything", "123 #@!"],
+            ),
+            (
+                "QUOTEDSTRING",
+                vec!["\"This is a quote\"", "'single quoted'"],
+            ),
+            (
+                "UUID",
+                vec![
+                    "123e4567-e89b-12d3-a456-426614174000",
+                    "123e4567-e89b-12d3-a456-426614174001",
+                    "123e4567-e89b-12d3-a456-426614174002",
+                ],
+            ),
+            (
+                "URN",
+                vec![
+                    "urn:isbn:0451450523",
+                    "urn:ietf:rfc:2648",
+                    "urn:mpeg:mpeg7:schema:2001",
+                ],
+            ),
+            // network
+            (
+                "IP",
+                vec![
+                    "192.168.1.1",
+                    "2001:0db8:85a3:0000:0000:8a2e:0370:7334",
+                    "172.16.254.1",
+                ],
+            ),
+            (
+                "IPV6",
+                vec![
+                    "2001:0db8:85a3:0000:0000:8a2e:0370:7334",
+                    "::1",
+                    "fe80::1ff:fe23:4567:890a",
+                ],
+            ),
+            ("IPV4", vec!["192.168.1.1", "10.0.0.1", "172.16.254.1"]),
+            (
+                "IPORHOST",
+                vec!["example.com", "192.168.1.1", "fe80::1ff:fe23:4567:890a"],
+            ),
+            (
+                "HOSTNAME",
+                vec!["example.com", "sub.domain.co.uk", "localhost"],
+            ),
+            ("EMAILLOCALPART", vec!["john.doe", "alice123", "bob-smith"]),
+            (
+                "EMAILADDRESS",
+                vec![
+                    "john.doe@example.com",
+                    "alice123@domain.co.uk",
+                    "bob-smith@localhost",
+                ],
+            ),
+            ("USERNAME", vec!["user1", "john.doe", "alice_123"]),
+            ("USER", vec!["user1", "john.doe", "alice_123"]),
+            (
+                "MAC",
+                vec!["00:1A:2B:3C:4D:5E", "001A.2B3C.4D5E", "00-1A-2B-3C-4D-5E"],
+            ),
+            (
+                "CISCOMAC",
+                vec!["001A.2B3C.4D5E", "001B.2C3D.4E5F", "001C.2D3E.4F5A"],
+            ),
+            (
+                "WINDOWSMAC",
+                vec![
+                    "00-1A-2B-3C-4D-5E",
+                    "00-1B-2C-3D-4E-5F",
+                    "00-1C-2D-3E-4F-5A",
+                ],
+            ),
+            (
+                "COMMONMAC",
+                vec![
+                    "00:1A:2B:3C:4D:5E",
+                    "00:1B:2C:3D:4E:5F",
+                    "00:1C:2D:3E:4F:5A",
+                ],
+            ),
+            ("HOSTPORT", vec!["example.com:80", "192.168.1.1:8080"]),
+            // paths
+            (
+                "UNIXPATH",
+                vec!["/home/user", "/var/log/syslog", "/tmp/abc_123"],
+            ),
+            ("TTY", vec!["/dev/pts/1", "/dev/tty0", "/dev/ttyS0"]),
+            (
+                "WINPATH",
+                vec![
+                    "C:\\Program Files\\App",
+                    "D:\\Work\\project\\file.txt",
+                    "E:\\New Folder\\test",
+                ],
+            ),
+            ("URIPROTO", vec!["http", "https", "ftp"]),
+            ("URIHOST", vec!["example.com", "192.168.1.1:8080"]),
+            (
+                "URIPATH",
+                vec!["/path/to/resource", "/another/path", "/root"],
+            ),
+            (
+                "URIQUERY",
+                vec!["key=value", "name=John&Doe", "search=query&active=true"],
+            ),
+            (
+                "URIPARAM",
+                vec!["?key=value", "?name=John&Doe", "?search=query&active=true"],
+            ),
+            (
+                "URIPATHPARAM",
+                vec![
+                    "/path?query=1",
+                    "/resource?name=John",
+                    "/folder/path?valid=true",
+                ],
+            ),
+            (
+                "URI",
+                vec![
+                    "http://user:password@example.com:80/path?query=string",
+                    "https://example.com",
+                    "ftp://192.168.1.1/upload",
+                ],
+            ),
+            (
+                "PATH",
+                vec![
+                    "/home/user/documents",
+                    "C:\\Windows\\system32",
+                    "/var/log/syslog",
+                ],
+            ),
+            // dates
+            (
+                "MONTH",
+                vec![
+                    "January",
+                    "Feb",
+                    "March",
+                    "Apr",
+                    "May",
+                    "Jun",
+                    "Jul",
+                    "August",
+                    "September",
+                    "October",
+                    "Nov",
+                    "December",
+                ],
+            ),
+            // Months: January, Feb, 3, 03, 12, December "MONTH": `\b(?:[Jj]an(?:uary|uar)?|[Ff]eb(?:ruary|ruar)?|[Mm](?:a|ä)?r(?:ch|z)?|[Aa]pr(?:il)?|[Mm]a(?:y|i)?|[Jj]un(?:e|i)?|[Jj]ul(?:y|i)?|[Aa]ug(?:ust)?|[Ss]ep(?:tember)?|[Oo](?:c|k)?t(?:ober)?|[Nn]ov(?:ember)?|[Dd]e(?:c|z)(?:ember)?)\b`,
+            (
+                "MONTHNUM2",
+                vec![
+                    "01", "02", "03", "04", "05", "06", "07", "08", "09", "10", "11", "12",
+                ],
+            ),
+            // Days Monday, Tue, Thu, etc
+            (
+                "DAY",
+                vec![
+                    "Monday",
+                    "Tuesday",
+                    "Wednesday",
+                    "Thursday",
+                    "Friday",
+                    "Saturday",
+                    "Sunday",
+                ],
+            ),
+            // Years?
+            ("YEAR", vec!["1999", "2000", "2021"]),
+            ("HOUR", vec!["00", "12", "23"]),
+            ("MINUTE", vec!["00", "30", "59"]),
+            // '60' is a leap second in most time standards and thus is valid.
+            ("SECOND", vec!["00", "30", "60"]),
+            ("TIME", vec!["14:30", "23:59:59", "12:00:00", "12:00:60"]),
+            // datestamp is YYYY/MM/DD-HH:MM:SS.UUUU (or something like it)
+            ("DATE_US", vec!["04/21/2022", "12-25-2020", "07/04/1999"]),
+            ("DATE_EU", vec!["21.04.2022", "25/12/2020", "04-07-1999"]),
+            ("ISO8601_TIMEZONE", vec!["Z", "+02:00", "-05:00"]),
+            ("ISO8601_SECOND", vec!["59", "30", "60.123"]),
+            (
+                "TIMESTAMP_ISO8601",
+                vec![
+                    "2022-04-21T14:30:00Z",
+                    "2020-12-25T23:59:59+02:00",
+                    "1999-07-04T12:00:00-05:00",
+                ],
+            ),
+            ("DATE", vec!["04/21/2022", "21.04.2022", "12-25-2020"]),
+            (
+                "DATESTAMP",
+                vec!["04/21/2022 14:30", "21.04.2022 23:59", "12-25-2020 12:00"],
+            ),
+            ("TZ", vec!["EST", "CET", "PDT"]),
+            ("DATESTAMP_RFC822", vec!["Wed Jan 12 2024 14:33 EST"]),
+            (
+                "DATESTAMP_RFC2822",
+                vec![
+                    "Tue, 12 Jan 2022 14:30 +0200",
+                    "Fri, 25 Dec 2020 23:59 -0500",
+                    "Sun, 04 Jul 1999 12:00 Z",
+                ],
+            ),
+            (
+                "DATESTAMP_OTHER",
+                vec![
+                    "Tue Jan 12 14:30 EST 2022",
+                    "Fri Dec 25 23:59 CET 2020",
+                    "Sun Jul 04 12:00 PDT 1999",
+                ],
+            ),
+            (
+                "DATESTAMP_EVENTLOG",
+                vec!["20220421143000", "20201225235959", "19990704120000"],
+            ),
+            // Syslog Dates: Month Day HH:MM:SS	"MONTH":         `\b(?:Jan(?:uary|uar)?|Feb(?:ruary|ruar)?|Mar(?:ch|z)?|Apr(?:il)?|May|i|Jun(?:e|i)?|Jul(?:y|i)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\b`,
+            (
+                "SYSLOGTIMESTAMP",
+                vec!["Jan  1 00:00:00", "Mar 15 12:34:56", "Dec 31 23:59:59"],
+            ),
+            ("PROG", vec!["sshd", "kernel", "cron"]),
+            ("SYSLOGPROG", vec!["sshd[1234]", "kernel", "cron[5678]"]),
+            (
+                "SYSLOGHOST",
+                vec!["example.com", "192.168.1.1", "localhost"],
+            ),
+            ("SYSLOGFACILITY", vec!["<1.2>", "<12345.13456>"]),
+            ("HTTPDATE", vec!["25/Dec/2024:14:33 4"]),
+        ];
+
+        for (pattern, values) in cases {
+            let grok = Grok::default();
+            let p = grok
+                .compile(&format!("%{{{pattern}:result}}"), true)
+                .unwrap();
+
+            for value in values {
+                let m = p.parse(value).unwrap();
+                let result = m.get("result").unwrap();
+                assert_eq!(
+                    &Value::String(value.to_string()),
+                    result,
+                    "pattern: {}, value: {}",
+                    pattern,
+                    value
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_re() {
+        let s = r"(?:0[1-9]|1[0-2])";
+        // let s = r"(?:1[0-2])";
+        let r = Regex::new(s).unwrap();
+        let result = r.find("12").unwrap();
+        println!("{:?}", result);
     }
 }

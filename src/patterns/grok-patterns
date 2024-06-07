@@ -68,7 +68,7 @@ YEAR (\d\d){1,2}
 HOUR (?:2[0123]|[01]?[0-9])
 MINUTE (?:[0-5][0-9])
 # '60' is a leap second in most time standards and thus is valid.
-SECOND (?:(?:[0-5]?[0-9]|60)(?:[:.,][0-9]+)?)
+SECOND (?:(?:60|[0-5]?[0-9])(?:[:.,][0-9]+)?)
 # Modified, removed lookahead
 TIME %{HOUR}:%{MINUTE}(?::%{SECOND})?
 # datestamp is YYYY/MM/DD-HH:MM:SS.UUUU (or something like it)
@@ -79,7 +79,7 @@ ISO8601_SECOND %{SECOND}
 TIMESTAMP_ISO8601 %{YEAR}-%{MONTHNUM}-%{MONTHDAY}[T ]%{HOUR}:?%{MINUTE}(?::?%{SECOND})?%{ISO8601_TIMEZONE}?
 DATE %{DATE_US}|%{DATE_EU}
 DATESTAMP %{DATE}[- ]%{TIME}
-TZ (?:[APMCE][SD]T|UTC)
+TZ (?:[APMCE][SED]T|UTC)
 DATESTAMP_RFC822 %{DAY} %{MONTH} %{MONTHDAY} %{YEAR} %{TIME} %{TZ}
 DATESTAMP_RFC2822 %{DAY}, %{MONTHDAY} %{MONTH} %{YEAR} %{TIME} %{ISO8601_TIMEZONE}
 DATESTAMP_OTHER %{DAY} %{MONTH} %{MONTHDAY} %{TIME} %{TZ} %{YEAR}
