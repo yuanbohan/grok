@@ -2,6 +2,12 @@
 name = "grok-rs"
 version = "0.1.0"
 edition = "2021"
+readme = "README.md"
+description = "Rust port of elastic Grok processor"
+repository = "https://github.com/GreptimeTeam/promql-parser"
+authors = ["yuanbohan"]
+keywords = ["grok", "elastic", "logstash", "ETL"]
+license = "Apache-2.0"
 
 [dependencies]
 glob = "0.3.1"
