@@ -22,7 +22,7 @@ const GROK_PATTERN: &str = r"(?x)
         (?:
             :(?<alias>[[[:word:]]@.-]+)
             (?:
-                :(?<type>int|float|bool(?:ean)?)
+                :(?<type>int|long|float|double|bool(?:ean)?)
             )?
         )?
     )
@@ -87,10 +87,10 @@ impl Pattern {
                     Some((alias, type_)) => {
                         let value = match type_ {
                             Some(type_) => match type_.as_str() {
-                                "int" => Value::Int(
+                                "int" | "long" => Value::Int(
                                     value.parse::<i64>().map_err(|e| format!("{e}: {value}"))?,
                                 ),
-                                "float" => Value::Float(
+                                "float" | "double" => Value::Float(
                                     value.parse::<f64>().map_err(|e| format!("{e}: {value}"))?,
                                 ),
                                 "bool" | "boolean" => Value::Bool(
@@ -795,6 +795,31 @@ mod tests {
                     value
                 );
             }
+        }
+    }
+
+    #[test]
+    fn test_elastic_docs() {
+        let cases = [(
+            "%{IP:client} %{WORD:method} %{URIPATHPARAM:request} %{NUMBER:bytes:int} %{NUMBER:duration:double}",
+            "55.3.244.1 GET /index.html 15824 0.043",
+            vec![
+                ("duration", Value::Float(0.043)),
+                ("request", Value::String("/index.html".to_string())),
+                ("method", Value::String("GET".to_string())),
+                ("bytes", Value::Int(15824)),
+                ("client", Value::String("55.3.244.1".to_string())),
+            ],
+        )];
+
+        for c in cases {
+            let grok = Grok::default();
+            let pattern = grok.compile(c.0, true).unwrap();
+            let expected =
+                c.2.into_iter()
+                    .map(|(k, v)| (k.to_string(), v))
+                    .collect::<HashMap<String, Value>>();
+            assert_eq!(expected, pattern.parse(c.1).unwrap());
         }
     }
 }
