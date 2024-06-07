@@ -1,5 +1,5 @@
-
-HAPROXYTIME (?!<[0-9])%{HOUR}:%{MINUTE}(?::%{SECOND})(?![0-9])
+# Modified, removed lookahead
+HAPROXYTIME %{HOUR}:%{MINUTE}(?::%{SECOND})?
 HAPROXYDATE %{MONTHDAY}/%{MONTH}/%{YEAR}:%{HAPROXYTIME}.%{INT}
 
 # Override these default patterns to parse out what is captured in your haproxy.cfg

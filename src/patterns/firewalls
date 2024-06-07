@@ -96,7 +96,8 @@ CISCOFW733100 \\s*%{DATA:[cisco.asa.burst.object}\s*\] drop %{DATA:cisco.asa.bur
 IPTABLES_TCP_FLAGS (CWR |ECE |URG |ACK |PSH |RST |SYN |FIN )*
 IPTABLES_TCP_PART (?:SEQ=%{INT:iptables.tcp.seq:int}\s+)?(?:ACK=%{INT:iptables.tcp.ack:int}\s+)?WINDOW=%{INT:iptables.tcp.window:int}\s+RES=0x%{BASE16NUM:iptables.tcp_reserved_bits}\s+%{IPTABLES_TCP_FLAGS:iptables.tcp.flags}
 
-IPTABLES4_FRAG (?:(?<= )(?:CE|DF|MF))*
+# Modified, removed lookbehind
+IPTABLES4_FRAG (?:(?:CE|DF|MF))*
 IPTABLES4_PART SRC=%{IPV4:source.ip}\s+DST=%{IPV4:destination.ip}\s+LEN=(?:%{INT:iptables.length:int})?\s+TOS=(?:0|0x%{BASE16NUM:iptables.tos})?\s+PREC=(?:0x%{BASE16NUM:iptables.precedence_bits})?\s+TTL=(?:%{INT:iptables.ttl:int})?\s+ID=(?:%{INT:iptables.id})?\s+(?:%{IPTABLES4_FRAG:iptables.fragment_flags})?(?:\s+FRAG: %{INT:iptables.fragment_offset:int})?
 IPTABLES6_PART SRC=%{IPV6:source.ip}\s+DST=%{IPV6:destination.ip}\s+LEN=(?:%{INT:iptables.length:int})?\s+TC=(?:0|0x%{BASE16NUM:iptables.tos})?\s+HOPLIMIT=(?:%{INT:iptables.ttl:int})?\s+FLOWLBL=(?:%{INT:iptables.flow_label})?
 
