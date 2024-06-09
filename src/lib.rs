@@ -8,11 +8,14 @@
 //! - float
 //! - double
 //! - bool
+//! - boolean
+//!
+//! If the type is not specified, then the value will be kept as string.
 //!
 //! # Usage
 //!
-//! Initiate a Grok instance with the default patterns, or add custom patterns,then compile the your pattern,
-//! and parse the input string based on the pattern.
+//! Initiate a Grok instance which includes the default patterns, or add custom patterns,
+//! then compile your whole pattern, and parse the input string based on the pattern.
 //!
 //! ```
 //! use std::collections::HashMap;
@@ -21,10 +24,7 @@
 //! let mut grok = Grok::default();
 //! grok.add_pattern("NAME", r"[A-z0-9._-]+");
 //! let pattern = grok.compile("%{NAME}", false).unwrap();
-//! let expected: HashMap<String, Value> = [("NAME", "admin")]
-//!     .into_iter()
-//!     .map(|(k, v)| (k.to_string(), Value::String(v.to_string())))
-//!     .collect();
+//! let expected = HashMap::from([("NAME".to_string(), Value::String("admin".into()))]);
 //!
 //! assert_eq!(expected, pattern.parse("admin").unwrap());
 //! assert_eq!(expected, pattern.parse("admin user").unwrap());
@@ -116,14 +116,8 @@ impl Pattern {
     /// let grok = Grok::default();
     /// let pattern = grok.compile("%{USERNAME}", false).unwrap();
     /// let result = pattern.parse("admin admin@example.com").unwrap();
-    /// let expected = [("USERNAME", "admin")]
-    ///      .into_iter()
-    ///      .map(|(k, v)| (k.to_string(), Value::String(v.to_string())))
-    ///      .collect::<HashMap<String, Value>>();
+    /// let expected = HashMap::from([("USERNAME".to_string(), Value::String("admin".into()))]);
     /// assert_eq!(expected, result);
-    ///
-    /// let empty = pattern.parse("✅").unwrap();
-    /// assert!(empty.is_empty());
     /// ```
     pub fn parse(&self, s: &str) -> Result<HashMap<String, Value>, String> {
         let mut map = HashMap::new();
@@ -332,6 +326,17 @@ mod tests {
             let pattern = grok.compile("%{NAME}", false).unwrap();
             assert_eq!(expected, pattern.parse("admin").unwrap());
         }
+    }
+
+    #[test]
+    fn test_pattern_parse_no_captures() {
+        let grok = Grok::default();
+        let pattern = grok.compile("%{USERNAME}", false).unwrap();
+
+        assert!(pattern.parse("$#@").unwrap().is_empty());
+        assert!(pattern.parse("").unwrap().is_empty());
+        assert!(pattern.parse("✅🚀🌍").unwrap().is_empty());
+        assert!(pattern.parse("     ").unwrap().is_empty());
     }
 
     #[test]
@@ -858,13 +863,7 @@ mod tests {
             for value in values {
                 let m = p.parse(value).unwrap();
                 let result = m.get("result").unwrap();
-                assert_eq!(
-                    &Value::String(value.to_string()),
-                    result,
-                    "pattern: {}, value: {}",
-                    pattern,
-                    value
-                );
+                assert_eq!(&Value::String(value.to_string()), result);
             }
         }
     }
