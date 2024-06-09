@@ -1,11 +1,40 @@
+//! grok-rs is a Rust implementation of the [Grok](https://www.elastic.co/guide/en/elasticsearch/reference/current/grok-processor.html)
+//! pattern matching library.
+//!
+//! The captured group can be renamed based on the alias, and the value can be converted to the specified type.
+//! The supported types are:
+//! - int
+//! - long
+//! - float
+//! - double
+//! - bool
+//!
+//! # Usage
+//!
+//! Initiate a Grok instance with the default patterns, or add custom patterns,then compile the your pattern,
+//! and parse the input string based on the pattern.
+//!
+//! ```
+//! use std::collections::HashMap;
+//! use grok_rs::{Grok, Value};
+//!
+//! let mut grok = Grok::default();
+//! grok.add_pattern("NAME", r"[A-z0-9._-]+");
+//! let pattern = grok.compile("%{NAME}", false).unwrap();
+//! let expected: HashMap<String, Value> = [("NAME", "admin")]
+//!     .into_iter()
+//!     .map(|(k, v)| (k.to_string(), Value::String(v.to_string())))
+//!     .collect();
+//!
+//! assert_eq!(expected, pattern.parse("admin").unwrap());
+//! assert_eq!(expected, pattern.parse("admin user").unwrap());
+//! ```
 use std::{
     collections::HashMap,
     fs::File,
     io::{BufRead, BufReader},
 };
 
-use glob::glob;
-use lazy_static::lazy_static;
 use regex::Regex;
 
 const MAX_RECURSION: i32 = 1024;
@@ -31,7 +60,7 @@ const GROK_PATTERN: &str = r"(?x)
 fn load_patterns() -> HashMap<String, String> {
     let mut patterns = HashMap::new();
 
-    for line in glob("src/patterns/*")
+    for line in glob::glob("src/patterns/*")
         .unwrap()
         .map(|e| File::open(e.unwrap()).unwrap())
         .flat_map(|f| BufReader::new(f).lines())
@@ -47,7 +76,7 @@ fn load_patterns() -> HashMap<String, String> {
     patterns
 }
 
-lazy_static! {
+lazy_static::lazy_static! {
     static ref GROK_REGEX: Regex = Regex::new(GROK_PATTERN).unwrap();
     static ref DEFAULT_PATTERNS: HashMap<String, String> = load_patterns();
 }
@@ -60,17 +89,42 @@ pub enum Value {
     String(String),
 }
 
+type AliasType = (String, Option<String>);
+
 #[derive(Debug)]
 pub struct Pattern {
     regex: Regex,
-    alias: HashMap<String, (String, Option<String>)>,
+    alias: HashMap<String, AliasType>,
 }
 
 impl Pattern {
-    fn new(regex: Regex, alias: HashMap<String, (String, Option<String>)>) -> Self {
+    fn new(regex: Regex, alias: HashMap<String, AliasType>) -> Self {
         Self { regex, alias }
     }
 
+    /// parse the input string based on the pattern, and rename the captured group based on alias.
+    ///  - if type is specified, then the value will be converted to the specified type.
+    ///  - if the type is not supported, then the value will be kept as string.
+    ///  - if the value can't be converted to the specified type, then an error will be returned.
+    ///  - if the value can't be captured, then an empty map will be returned.
+    ///
+    /// # Example
+    /// ```
+    /// use std::collections::HashMap;
+    /// use grok_rs::{Grok, Value};
+    ///
+    /// let grok = Grok::default();
+    /// let pattern = grok.compile("%{USERNAME}", false).unwrap();
+    /// let result = pattern.parse("admin admin@example.com").unwrap();
+    /// let expected = [("USERNAME", "admin")]
+    ///      .into_iter()
+    ///      .map(|(k, v)| (k.to_string(), Value::String(v.to_string())))
+    ///      .collect::<HashMap<String, Value>>();
+    /// assert_eq!(expected, result);
+    ///
+    /// let empty = pattern.parse("✅").unwrap();
+    /// assert!(empty.is_empty());
+    /// ```
     pub fn parse(&self, s: &str) -> Result<HashMap<String, Value>, String> {
         let mut map = HashMap::new();
         let names = self.regex.capture_names().flatten().collect::<Vec<_>>();
@@ -86,19 +140,16 @@ impl Pattern {
                 match self.alias.get(name) {
                     Some((alias, type_)) => {
                         let value = match type_ {
-                            Some(type_) => match type_.as_str() {
-                                "int" | "long" => Value::Int(
-                                    value.parse::<i64>().map_err(|e| format!("{e}: {value}"))?,
-                                ),
-                                "float" | "double" => Value::Float(
-                                    value.parse::<f64>().map_err(|e| format!("{e}: {value}"))?,
-                                ),
-                                "bool" | "boolean" => Value::Bool(
-                                    value.parse::<bool>().map_err(|e| format!("{e}: {value}"))?,
-                                ),
-                                _ => Value::String(value),
-                            },
-                            None => Value::String(value),
+                            Some(type_) if type_.eq("int") || type_.eq("long") => Value::Int(
+                                value.parse::<i64>().map_err(|e| format!("{e}: {value}"))?,
+                            ),
+                            Some(type_) if type_.eq("float") || type_.eq("double") => Value::Float(
+                                value.parse::<f64>().map_err(|e| format!("{e}: {value}"))?,
+                            ),
+                            Some(type_) if type_.eq("bool") || type_.eq("boolean") => Value::Bool(
+                                value.parse::<bool>().map_err(|e| format!("{e}: {value}"))?,
+                            ),
+                            _ => Value::String(value),
                         };
                         map.insert(alias.clone(), value);
                     }
@@ -119,13 +170,33 @@ pub struct Grok {
 }
 
 impl Grok {
+    /// add a custom pattern, if the pattern is already defined, then it will be overwritten.
+    /// # Example
+    /// ```
+    /// use grok_rs::Grok;
+    ///
+    /// let mut grok = Grok::default();
+    /// grok.add_pattern("NAME", r"[A-z0-9._-]+");
+    /// ```
     pub fn add_pattern<T: Into<String>>(&mut self, name: T, pattern: T) {
         self.patterns.insert(name.into(), pattern.into());
     }
 
-    /// if named_capture_only is true, then pattern without alias won't be captured. e.g.
-    /// if pattern is "%{USERNAME} %{EMAILADDRESS:email}" and named_capture_only is true,
-    /// then only email will be captured.
+    /// Compile the pattern, and return a Pattern.
+    /// - if `named_capture_only` is true, then the unnamed capture group will be ignored.
+    /// - if the pattern is invalid or not found , then an error will be returned.
+    ///
+    /// Due to the compile process is heavy, it's recommended compile the pattern once and reuse it.
+    ///
+    /// # Example
+    ///
+    /// the USERNAME will be ignored because `named_capture_only` is true.
+    ///
+    /// ```
+    /// use grok_rs::Grok;
+    /// let grok = Grok::default();
+    /// let pattern = grok.compile("%{USERNAME} %{EMAILADDRESS:email}", true).unwrap();
+    /// ```
     pub fn compile(&self, s: &str, named_capture_only: bool) -> Result<Pattern, String> {
         let mut alias_map = HashMap::new();
         let mut haystack = s.to_string();

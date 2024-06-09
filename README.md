@@ -2,9 +2,16 @@
 [![Version](https://img.shields.io/crates/v/grok-rs?label=grok-rs)](https://crates.io/crates/grok-rs)
 [![codecov](https://codecov.io/gh/yuanbohan/grok-rs/graph/badge.svg?token=1T8WSFV6BX)](https://codecov.io/gh/yuanbohan/grok-rs)
 
-# grok
+# grok_rs
 
-Rust port of Elastic Grok processor, inspired by [grok-go][grok-go] and [grok][grok]
+the `grok_rs` is a rust port of Elastic Grok processor, inspired by [grok-go][grok-go] and [grok][grok]
+
+## Usage
+
+```toml
+[dependencies]
+grok-rs = "0.1"
+```
 
 ## Example
 
@@ -92,6 +99,10 @@ the output is:
 }
 ```
 
+## Notice
+
+`grok_rs` is based on [regex][regex] crate, so lacks several features that are not known how to implement efficiently. This includes, but is not limited to, look-around and backreferences. In exchange, all regex searches in this crate have worst case `O(m * n)` time complexity, where `m` is proportional to the size of the regex and `n` is proportional to the size of the string being searched.
+
 ## Elastic Grok compliance
 
 This crate declares compatible with [elastic grok patterns v8.14.0][grok-patterns], which is tagged at 2024-06-05.
@@ -99,3 +110,4 @@ This crate declares compatible with [elastic grok patterns v8.14.0][grok-pattern
 [grok-patterns]: https://github.com/elastic/elasticsearch/tree/v8.14.0/libs/grok/src/main/resources/patterns/ecs-v1
 [grok-go]: https://github.com/elastic/go-grok
 [grok]: https://github.com/daschl/grok
+[regex]: https://docs.rs/regex/latest/regex
