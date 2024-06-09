@@ -10,7 +10,7 @@ the `grok_rs` is a rust port of Elastic Grok processor, inspired by [grok-go][gr
 
 ```toml
 [dependencies]
-grok-rs = "0.1.2"
+grok-rs = "0.1.3"
 ```
 
 ## Example
